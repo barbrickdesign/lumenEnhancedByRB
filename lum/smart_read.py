@@ -1,5 +1,5 @@
 """Smart file reading module with encoding detection and token counting."""
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Iterator, IO
 from lum.config import *
 from lum.gitignore import *
 import json
@@ -20,7 +20,7 @@ def get_files_parameters() -> Dict[str, List[str]]:
     return base_parameters
 
 
-def chunk_read(file_path, chunk_size: int = 1024):
+def chunk_read(file_path: IO, chunk_size: int = 1024) -> Iterator[str]:
     """Read file in chunks for memory efficiency.
     
     Args:
