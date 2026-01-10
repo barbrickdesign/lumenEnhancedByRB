@@ -27,11 +27,11 @@ def get_project_structure(root_path: str, skipped_folders: List[str]) -> Dict[st
     if gitignore_exists(""):
         _, skipped_folders = gitignore_skipping()
     
-    for root, _, files in os.walk(root_path, topdown=True):
+    for root, dirs, files in os.walk(root_path, topdown=True):
         # Skip folders starting with "."
         relative_dir = os.path.relpath(root, root_path)
         if any(part.startswith('.') for part in relative_dir.split(os.sep) if part != '.'):
-            _[:] = []
+            dirs[:] = []
             continue
 
         should_skip = False
@@ -39,7 +39,7 @@ def get_project_structure(root_path: str, skipped_folders: List[str]) -> Dict[st
             # If starts with "*", skip anything that ends with the folder name
             if folder_name.startswith("*"):
                 if root.endswith(folder_name[1:]):
-                    _[:] = []
+                    dirs[:] = []
                     structure[root_path_name][f"{''.join(root.split(os.sep)[-1])}/"] = {}
                     should_skip = True
                     break
@@ -47,7 +47,7 @@ def get_project_structure(root_path: str, skipped_folders: List[str]) -> Dict[st
             else:
                 element = root.split(os.sep)[-1]
                 if element == folder_name:
-                    _[:] = []
+                    dirs[:] = []
                     structure[root_path_name][f"{''.join(root.split(os.sep)[-1])}/"] = {}
                     should_skip = True
                     break
@@ -55,15 +55,18 @@ def get_project_structure(root_path: str, skipped_folders: List[str]) -> Dict[st
         if should_skip:
             continue
 
-
         base = structure[root_path_name]
         level = len(root.split(os.sep)) - len(root_path.split(os.sep))
 
+        # Root level files
         if level == 0:
             if files:
                 for file in files:
-                    base[file] = {}
+                    # Skip hidden files
+                    if not file.startswith('.'):
+                        base[file] = {}
 
+        # Nested directories
         else:
             for x in range(level, 0, -1):
                 folder_subname = root.split(os.sep)[-x]
@@ -71,7 +74,9 @@ def get_project_structure(root_path: str, skipped_folders: List[str]) -> Dict[st
                     base[f"{folder_subname}/"] = {}
                     if files:
                         for file in files:
-                            base[f"{folder_subname}/"][file] = {}
+                            # Skip hidden files
+                            if not file.startswith('.'):
+                                base[f"{folder_subname}/"][file] = {}
                             
                 else:
                     base = base[folder_subname + "/"]

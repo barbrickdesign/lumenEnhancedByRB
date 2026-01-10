@@ -38,33 +38,40 @@ def get_files_root(main_root: str, skipped_folders: List[str], allowed: List[str
     files_list = {}
     analyzed_folder_count = 0
     min_level = 0
-    for root, _, files in os.walk(main_root):
+    
+    for root, dirs, files in os.walk(main_root):
         should_skip = False
         
         relative_dir = os.path.relpath(root, main_root)
         
+        # Skip hidden directories (starting with '.')
         if any(part.startswith('.') for part in relative_dir.split(os.sep) if part != '.'):
             should_skip = True
         else:
+            # Check against skipped folder patterns
             for folder_pattern in skipped_folders:
+                # Pattern with wildcard (e.g., "*cache")
                 if folder_pattern.startswith("*"):
-                    if root.endswith(folder_pattern[1::]):
+                    if root.endswith(folder_pattern[1:]):
                         should_skip = True
                         break
-
+                
+                # Pattern with path separators (e.g., "src/temp")
                 elif '/' in folder_pattern or '\\' in folder_pattern:
                     normalized_pattern = os.path.normpath(folder_pattern)
                     if relative_dir == normalized_pattern or relative_dir.startswith(normalized_pattern + os.sep):
                         should_skip = True
                         break
-
+                
+                # Simple folder name match
                 else:
                     if os.path.basename(root) == folder_pattern:
                         should_skip = True
                         break
 
         if should_skip:
-            _[:] = []
+            # Clear dirs list to prevent os.walk from descending
+            dirs[:] = []
             continue
 
         analyzed_folder_count += 1
@@ -73,11 +80,13 @@ def get_files_root(main_root: str, skipped_folders: List[str], allowed: List[str
 
         if files:
             for file in files:
+                # Skip hidden files
                 if file.startswith('.'):
                     continue
+                # Check if file extension is allowed
                 if any(file.endswith(allowed_file) for allowed_file in allowed):
                     file_root = f"{root}{os.sep}{file}"
-                    file_list_index = "/".join(file_root.split(os.sep)[min_level::])
+                    file_list_index = "/".join(file_root.split(os.sep)[min_level:])
                     files_list[file_list_index] = file_root
 
     return files_list, len(files_list), analyzed_folder_count

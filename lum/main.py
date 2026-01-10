@@ -39,12 +39,22 @@ def change_parameters() -> None:
     
     Platform-specific handling for Windows, macOS, and Linux.
     """
-    if platform.system() == "Windows":
-        os.startfile(get_config_file())
-    elif platform.system() == "Darwin":
-        subprocess.Popen(["open", get_config_file()])
-    else:
-        subprocess.Popen(["xdg-open", get_config_file()])
+    config_file = get_config_file()
+    
+    if not os.path.exists(config_file):
+        print(f"{Fore.YELLOW}Configuration file not found. Creating...")
+        check_config()
+    
+    try:
+        if platform.system() == "Windows":
+            os.startfile(config_file)
+        elif platform.system() == "Darwin":
+            subprocess.Popen(["open", config_file])
+        else:
+            subprocess.Popen(["xdg-open", config_file])
+    except Exception as e:
+        print(f"{Fore.RED}Error opening configuration file: {e}")
+        print(f"Please manually edit: {config_file}")
 
 def make_structure(path: str, skipped: List[str]) -> str:
     """Generate JSON representation of project structure.
@@ -76,6 +86,15 @@ def lum_command_local(args) -> None:
     """
     print("Launching local analysis...")
     root_path = args.path
+    
+    # Validate path exists
+    if not os.path.exists(root_path):
+        print(f"{Fore.RED}Error: Path '{root_path}' does not exist.")
+        sys.exit(1)
+    
+    if not os.path.isdir(root_path):
+        print(f"{Fore.RED}Error: Path '{root_path}' is not a directory.")
+        sys.exit(1)
 
     if args.txt: output_file = args.txt
     else: output_file = None
@@ -98,6 +117,15 @@ def lum_command_local(args) -> None:
 
     files_root, file_count, folder_count = get_files_root(root_path, skipped_folders)
     title_text = base_parameters["title_text"]
+    
+    # Check if any files were found
+    if file_count == 0:
+        print(f"{Fore.YELLOW}Warning: No processable files found in '{root_path}'.")
+        print("This may be because:")
+        print("  - All files are in skipped folders (node_modules, .git, etc.)")
+        print("  - No files match allowed file types")
+        print("  - Directory is empty")
+        sys.exit(0)
 
     if args.leaderboard is not None:
         rank_tokens(files_root, args.leaderboard, allowed_files = allowed_files, skipped_files = skipped_files)
@@ -142,7 +170,7 @@ def lum_command_local(args) -> None:
             print(Fore.YELLOW + "Copy to clipboard failed.")
             print(Style.DIM + "To fix clipboard issues on Linux, install xsel or xclip.")
             
-            choice = input("Do you want to create a 'prompt.txt' file as fallback? [Y/N]: ").strip().lower()
+            choice = input("Do you want to create a 'prompt.txt' file as fallback? [Y/n]: ").strip().lower()
             
             if choice == '' or choice == 'y':
                 output_path = os.path.join(os.getcwd(), "prompt.txt")
@@ -154,6 +182,7 @@ def lum_command_local(args) -> None:
                     print(Fore.RED + f"Error saving prompt to file {output_path}: {e}")
             else:
                 print(Fore.YELLOW + "Prompt.txt creation cancelled.")
+                print("The prompt could not be saved. Please fix clipboard issues or try -t flag.")
 
     elif output_file is not None:
         output_path = os.path.join(root_path, f"{output_file}.txt")
@@ -269,13 +298,19 @@ def lum_contribute(args) -> None:
     
     print(" 1. Assembling file structure...")
     files_root, file_count, folder_count = get_files_root(root_path, skipped_folders)
-    print(f"    Found {file_count} files across {folder_count} folders.")
-    if not files_root:
+    print(f"    Found {Fore.CYAN}{file_count}{Style.RESET_ALL} files across {Fore.CYAN}{folder_count}{Style.RESET_ALL} folders.")
+    
+    if not files_root or file_count == 0:
         print(Fore.YELLOW + "No allowed files found in this directory. Nothing to contribute.")
+        print("This may be because all files are in skipped folders or don't match allowed types.")
         return
     
     print(" 2. Sanitizing code and preparing payload...")
-    codebase = assemble_for_api(files_root, allowed_files, skipped_files)
+    try:
+        codebase = assemble_for_api(files_root, allowed_files, skipped_files)
+    except Exception as e:
+        print(f"{Fore.RED}Error during code assembly: {e}")
+        return
     
     try:
         import tiktoken
