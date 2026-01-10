@@ -1,12 +1,33 @@
+"""Assembly module for building prompts from codebase files.
+
+Handles collection of files, reading their contents, and assembling them
+into a formatted prompt suitable for LLMs.
+"""
 from lum.smart_read import read_file
 from lum.gitignore import *
-from typing import List
+from typing import List, Dict, Tuple
 import os
 
 
 PROMPT_SEPERATOR = "\n\n\n"
 
-def get_files_root(main_root: str, skipped_folders: List, allowed: List = None):
+
+def get_files_root(main_root: str, skipped_folders: List[str], allowed: List[str] = None) -> Tuple[Dict[str, str], int, int]:
+    """Recursively collect all processable files from a directory tree.
+    
+    Respects .gitignore rules and skips hidden folders (starting with '.').
+    
+    Args:
+        main_root: Root directory to scan
+        skipped_folders: List of folder names/patterns to skip
+        allowed: List of allowed file extensions
+        
+    Returns:
+        Tuple of (files_dict, file_count, folder_count) where:
+        - files_dict maps relative paths to absolute paths
+        - file_count is the total number of files found
+        - folder_count is the number of folders analyzed
+    """
     if allowed is None:
         from lum.smart_read import get_files_parameters
         allowed = get_files_parameters()["allowed_files"]
@@ -61,25 +82,72 @@ def get_files_root(main_root: str, skipped_folders: List, allowed: List = None):
 
     return files_list, len(files_list), analyzed_folder_count
 
-def add_intro(prompt: str, intro: str):
+def add_intro(prompt: str, intro: str) -> str:
+    """Add introductory text to the prompt.
+    
+    Args:
+        prompt: Existing prompt string
+        intro: Intro text to add
+        
+    Returns:
+        Updated prompt with intro text
+    """
     prompt += intro + PROMPT_SEPERATOR
     return prompt
 
 
-def add_structure(prompt: str, json_structure: str):
+def add_structure(prompt: str, json_structure: str) -> str:
+    """Add project structure section to the prompt.
+    
+    Args:
+        prompt: Existing prompt string
+        json_structure: JSON representation of project structure
+        
+    Returns:
+        Updated prompt with structure section
+    """
     prompt += "--- PROJECT STRUCTURE ---" + PROMPT_SEPERATOR
     prompt += json_structure + PROMPT_SEPERATOR
     return prompt
 
 
-def add_files_content(prompt: str, files_root: dict, title_text: str = None, allowed_files: List = None, skipped_files: List = None):
+def add_files_content(prompt: str, files_root: Dict[str, str], title_text: str = None, 
+                      allowed_files: List[str] = None, skipped_files: List[str] = None) -> str:
+    """Add file contents to the prompt.
+    
+    Iterates through all files and appends their content with title headers.
+    
+    Args:
+        prompt: Existing prompt string
+        files_root: Dictionary mapping file names to file paths
+        title_text: Format string for file titles
+        allowed_files: List of allowed file extensions
+        skipped_files: List of files to skip
+        
+    Returns:
+        Updated prompt with all file contents
+    """
     for file_name, file_path in files_root.items():
         prompt += title_text.format(file = file_name) + PROMPT_SEPERATOR
         prompt += read_file(file_path, allowed_files = allowed_files, skipped_files = skipped_files) + PROMPT_SEPERATOR
 
     return prompt
 
-def assemble_for_api(files_root: dict, allowed_files: List = None, skipped_files: List = None):
+def assemble_for_api(files_root: Dict[str, str], allowed_files: List[str] = None, 
+                     skipped_files: List[str] = None) -> str:
+    """Assemble and sanitize code for API submission.
+    
+    Reads all files, combines them with separators, and applies sanitization
+    to remove comments, secrets, and PII before network submission.
+    
+    Args:
+        files_root: Dictionary mapping file names to file paths
+        allowed_files: List of allowed file extensions
+        skipped_files: List of files to skip
+        
+    Returns:
+        Sanitized code blob ready for API submission
+    """
     from lum.data import sanitize_code
 
     full_code_blob = ""

@@ -1,4 +1,12 @@
-import re, os, tempfile
+"""Code sanitization module.
+
+Provides functionality to remove comments, detect and redact secrets,
+and remove personally identifiable information (PII) from code before
+network submission.
+"""
+import re
+import os
+import tempfile
 from pygments import lex
 from pygments.lexers import guess_lexer
 from pygments.token import Comment
@@ -6,6 +14,17 @@ from pygments.util import ClassNotFound
 
 
 def _remove_comments(content: str) -> str:
+    """Remove comments from code using Pygments lexer.
+    
+    Automatically detects the programming language and removes
+    language-specific comments.
+    
+    Args:
+        content: Source code string
+        
+    Returns:
+        Code with comments removed, or original content if language unknown
+    """
     try:
         lexer = guess_lexer(content, stripall=True)
         tokens = lex(content, lexer)
@@ -14,6 +33,20 @@ def _remove_comments(content: str) -> str:
         return content
 
 def _redact_secrets(content: str) -> str:
+    """Detect and redact secrets using TruffleHog.
+    
+    Scans code for API keys, tokens, passwords, and other secrets,
+    replacing them with [REDACTED_SECRET].
+    
+    Args:
+        content: Source code string
+        
+    Returns:
+        Code with secrets redacted
+        
+    Note:
+        Uses temporary files for TruffleHog processing
+    """
     from trufflehog3.core import scan, load_config, load_rules, DEFAULT_RULES_FILE
 
     sanitized_content = content
@@ -42,21 +75,48 @@ def _redact_secrets(content: str) -> str:
 
     return sanitized_content
 
-def _redact_pii(content: str) -> str: #pii = personally identifiable informations
+def _redact_pii(content: str) -> str:
+    """Remove personally identifiable information from code.
+    
+    Uses scrubadub to detect and replace names, emails, phone numbers,
+    and other PII. Also removes IP addresses.
+    
+    Args:
+        content: Source code string
+        
+    Returns:
+        Code with PII redacted
+    """
     import scrubadub
     sanitized_content = scrubadub.clean(content, replace_with='placeholder')
 
-    #ip for bonus removal
+    # Additional IP address removal
     sanitized_content = re.sub(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', '[REDACTED_IP]', sanitized_content)
     return sanitized_content
 
 def sanitize_code(content: str) -> str:
-    #removing comments, secrets then pii's then removing whitespaces before submission
-    if not content or not isinstance(content, str): return ""
+    """Comprehensive code sanitization pipeline.
+    
+    Applies three sanitization steps in order:
+    1. Remove comments
+    2. Redact secrets (API keys, tokens, etc.)
+    3. Redact PII (names, emails, etc.)
+    
+    Also normalizes whitespace by removing excessive blank lines.
+    
+    Args:
+        content: Source code string
+        
+    Returns:
+        Sanitized code ready for network submission
+    """
+    if not content or not isinstance(content, str):
+        return ""
 
     uncommented_code = _remove_comments(content)
     unsecreted_code = _redact_secrets(uncommented_code)
     sanitized_code = _redact_pii(unsecreted_code)
 
+    # Normalize whitespace
     final_code = re.sub(r'\n\s*\n', '\n\n', sanitized_code).strip()
     return final_code

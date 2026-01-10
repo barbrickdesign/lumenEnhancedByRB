@@ -1,13 +1,33 @@
-import os, shutil, sys, requests, subprocess, stat
+"""GitHub repository handling module.
+
+Provides functionality to validate GitHub repository URLs, clone repositories,
+and manage temporary repository downloads for analysis.
+"""
+import os
+import shutil
+import sys
+import stat
+import subprocess
+from typing import Tuple, Optional
+import requests
 from lum.config import *
 
 
-def make_github_api_link(repo_link: str = None):
-    #we need to make link a https in case the user inputs a bad link
-    #case 2 : github.com/... -> https://githu...
-    #case 3 : https:// = good
-    #also for the git clone, need .git at the end
-
+def make_github_api_link(repo_link: str = None) -> Tuple[Optional[str], Optional[str]]:
+    """Convert GitHub repository URL to API link and clone link.
+    
+    Handles multiple GitHub URL formats:
+    - https://github.com/user/repo
+    - github.com/user/repo
+    - https://www.github.com/user/repo
+    - URLs with or without .git extension
+    
+    Args:
+        repo_link: GitHub repository URL
+        
+    Returns:
+        Tuple of (api_link, clone_link) or (False, False) if invalid
+    """
     if repo_link is None:
         return False, False
     
@@ -29,23 +49,36 @@ def make_github_api_link(repo_link: str = None):
     return False, False
 
 
-def check_repo(repo_link: str = None):
+def check_repo(repo_link: str = None) -> bool:
+    """Check if a GitHub repository exists and is accessible.
+    
+    Args:
+        repo_link: GitHub repository URL
+        
+    Returns:
+        True if repository exists and is public, False otherwise
+    """
     api_link, _ = make_github_api_link(repo_link=repo_link)
     if api_link:
         try:
-            headers = {
-                'User-Agent': 'LUM-Python-Script'
-            }
+            headers = {'User-Agent': 'LUM-Python-Script'}
             response = requests.get(url=api_link, timeout=10, headers=headers)
-            return response.status_code == 200 #true if exists otherwise false !
+            return response.status_code == 200
         
         except requests.exceptions.RequestException as e:
             print(f"ERROR checking repository API: {e}")
 
-    return False #false if link can't be secured or doesn't exist or isnt github link
+    return False
 
 
-def check_git():
+def check_git() -> bool:
+    """Check if Git is installed on the system.
+    
+    Provides platform-specific installation instructions if Git is not found.
+    
+    Returns:
+        True if Git is installed, False otherwise
+    """
     if shutil.which('git') is None:
         print("Git is not installed. Please install it manually.")
 
@@ -60,8 +93,19 @@ def check_git():
     return True
 
 
-#function fixed with ai :skull:
 def remove_readonly(func, path, excinfo):
+    """Callback for removing read-only files during directory deletion.
+    
+    Handles permission errors when deleting Git repositories on Windows.
+    
+    Args:
+        func: Function that raised the error
+        path: Path to the problematic file
+        excinfo: Exception information tuple
+        
+    Raises:
+        Original exception if not a permission error
+    """
     exc_value = excinfo[1]
     if isinstance(exc_value, PermissionError) or (hasattr(exc_value, 'winerror') and exc_value.winerror == 5):
         try:
@@ -73,7 +117,22 @@ def remove_readonly(func, path, excinfo):
         raise exc_value
 
 
-def download_repo(repo_link: str = None):
+def download_repo(repo_link: str = None) -> str:
+    """Clone a GitHub repository to the Lumen config directory.
+    
+    Downloads repository to ~/.lum/{repo_name}. Removes existing directory
+    if it already exists.
+    
+    Args:
+        repo_link: GitHub repository URL
+        
+    Returns:
+        Path to the cloned repository
+        
+    Raises:
+        SystemExit: If repo_link is invalid or clone fails
+        subprocess.CalledProcessError: If git clone command fails
+    """
     if not repo_link:
         print("Repository link is required.")
         sys.exit(1)
@@ -83,25 +142,24 @@ def download_repo(repo_link: str = None):
         print("Invalid or unsupported GitHub repository link format.")
         sys.exit(1)
 
-    #go to lum config file
+    # Navigate to Lumen config directory
     lum_repo = get_config_directory()
     repo_name = clone_link.split("/")[-1].replace(".git", "")
 
     if not repo_name:
-        repo_name = clone_link.split("/")[-2] #trailing slash case
+        repo_name = clone_link.split("/")[-2]  # Handle trailing slash case
     lum_repo_name = os.path.join(lum_repo, repo_name)
 
-    #removing existing folder if already exists
+    # Remove existing folder if it exists
     if os.path.exists(lum_repo_name):
         print(f"Removing existing directory: {lum_repo_name}")
         remove_repo(lum_repo_name)
 
-    #download with git clone using the parameter
+    # Clone repository using git
     command = ["git", "clone", clone_link, lum_repo_name]
 
     try:
         subprocess.run(command, check=True, capture_output=True, text=True)
-        #return the path of the folder to analyze
         return lum_repo_name
 
     except subprocess.CalledProcessError as e:
@@ -114,13 +172,20 @@ def download_repo(repo_link: str = None):
         raise
 
 
-def remove_repo(repo_root: str = None):
+def remove_repo(repo_root: str = None) -> None:
+    """Remove a cloned repository directory.
+    
+    Handles read-only file permissions that may prevent deletion.
+    
+    Args:
+        repo_root: Path to the repository directory to remove
+    """
     if not repo_root or not isinstance(repo_root, str) or not os.path.isdir(repo_root):
         print(f"Path not found or not a directory: {repo_root}")
         return
 
     try:
-        shutil.rmtree(repo_root, onerror=remove_readonly) #if permissions error we remove the readonly to be able to delete the folder we cloned
+        shutil.rmtree(repo_root, onerror=remove_readonly)
 
     except Exception as e:
         print(f"ERROR deleting folder {repo_root}: {e}")
