@@ -1,4 +1,13 @@
-import os, json, sys
+"""Configuration management module for Lumen CLI.
+
+Handles user configuration stored in ~/.lum/config.json including
+intro text, title text, skipped folders/files, allowed file types,
+AI instructions, and authentication tokens.
+"""
+import os
+import json
+import sys
+from typing import Dict, List, Any, Optional
 
 EXPECTED_CONFIG_KEYS = [
     "intro_text",
@@ -85,7 +94,15 @@ Good luck !
 config_folder = ".lum"
 config_file = "config.json"
 
-def check_config():
+def check_config() -> None:
+    """Check and initialize configuration file if needed.
+    
+    Creates the configuration directory and file if they don't exist.
+    Validates existing configuration and resets if keys are missing or corrupted.
+    
+    Raises:
+        SystemExit: If configuration cannot be created or modified
+    """
     config_dir, config_path = get_config_directory(), get_config_file()
     config_needs_creation_or_reset, config_data = False, {}
 
@@ -122,7 +139,14 @@ def check_config():
             sys.exit(1)
 
 
-def reset_config():
+def reset_config() -> None:
+    """Reset configuration file to default values.
+    
+    Overwrites the existing config.json with BASE_CONFIG defaults.
+    
+    Raises:
+        SystemExit: If configuration file cannot be modified
+    """
     try:
         with open(get_config_file(), "w+") as config_file:
             json.dump(
@@ -138,27 +162,53 @@ def reset_config():
         sys.exit(1)
 
 
-def get_config_directory():
+def get_config_directory() -> str:
+    """Get the path to the Lumen configuration directory.
+    
+    Returns:
+        Path to ~/.lum directory
+    """
     return str(os.path.join(os.path.expanduser("~"), config_folder))
 
-def get_config_file():
+def get_config_file() -> str:
+    """Get the full path to the config.json file.
+    
+    Returns:
+        Path to ~/.lum/config.json
+    """
     return str(os.path.join(get_config_directory(), config_file))
 
-def get_config_data():
+def get_config_data() -> Dict[str, Any]:
+    """Load and return configuration data from file.
+    
+    Returns:
+        Dictionary containing configuration data, or BASE_CONFIG if file not found
+    """
     try:
         with open(get_config_file(), "r", encoding="utf-8") as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return BASE_CONFIG.copy()
 
-def save_config_data(data):
+def save_config_data(data: Dict[str, Any]) -> None:
+    """Save configuration data to file.
+    
+    Args:
+        data: Configuration dictionary to save
+    """
     try:
         with open(get_config_file(), "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
     except Exception as e:
         print(f"Could not save config file: {e}")
 
-def set_config_value(key: str, value_str: str):
+def set_config_value(key: str, value_str: str) -> None:
+    """Set a specific configuration value from command line.
+    
+    Args:
+        key: Configuration key to set
+        value_str: String value to set (will be converted to appropriate type)
+    """
     if key not in BASE_CONFIG:
         print(f"Error: Invalid configuration key '{key}'.")
         print("Available keys:", ", ".join(BASE_CONFIG.keys()))
@@ -170,7 +220,7 @@ def set_config_value(key: str, value_str: str):
     processed_value = value_str
     try:
         if target_type is bool:
-            processed_value = value_str.lower() in ['true', '1', 't', 'y', 'yes'] #set to true if one of these in list
+            processed_value = value_str.lower() in ['true', '1', 't', 'y', 'yes']
         elif target_type is list:
             processed_value = [item.strip() for item in value_str.split(',')]
         elif target_type is int:
@@ -185,38 +235,88 @@ def set_config_value(key: str, value_str: str):
     save_config_data(config_data)
     print(f"Successfully updated '{key}' to: {processed_value}")
 
-def store_pat(pat: str):
+def store_pat(pat: str) -> None:
+    """Store personal access token in configuration.
+    
+    Args:
+        pat: Personal access token to store
+    """
     config_data = get_config_data()
     config_data["pat"] = pat
     save_config_data(config_data)
 
-def get_pat():
+def get_pat() -> Optional[str]:
+    """Retrieve stored personal access token.
+    
+    Returns:
+        Personal access token if stored, None otherwise
+    """
     return get_config_data().get("pat")
 
-def remove_pat():
+def remove_pat() -> bool:
+    """Remove stored personal access token from configuration.
+    
+    Returns:
+        True if successful
+    """
     config_data = get_config_data()
     if "pat" in config_data:
         del config_data["pat"]
         save_config_data(config_data)
     return True
 
-def get_intro():
+def get_intro() -> str:
+    """Get intro text from configuration.
+    
+    Returns:
+        Intro text for prompts
+    """
     return get_config_data().get("intro_text", BASE_CONFIG["intro_text"])
 
-def get_title():
+def get_title() -> str:
+    """Get title text format from configuration.
+    
+    Returns:
+        Title text template for file headers
+    """
     return get_config_data().get("title_text", BASE_CONFIG["title_text"])
 
-def get_skipped_folders():
+def get_skipped_folders() -> List[str]:
+    """Get list of folders to skip during processing.
+    
+    Returns:
+        List of folder names/patterns to skip
+    """
     return get_config_data().get("skipped_folders", BASE_CONFIG["skipped_folders"])
 
-def get_skipped_files():
+def get_skipped_files() -> List[str]:
+    """Get list of files to skip during processing.
+    
+    Returns:
+        List of file names/patterns to skip
+    """
     return get_config_data().get("skipped_files", BASE_CONFIG["skipped_files"])
 
-def get_allowed_file_types():
+def get_allowed_file_types() -> List[str]:
+    """Get list of allowed file extensions for processing.
+    
+    Returns:
+        List of file extensions (e.g., '.py', '.js')
+    """
     return get_config_data().get("allowed_file_types", BASE_CONFIG["allowed_file_types"])
 
-def get_use_ai_instructions():
+def get_use_ai_instructions() -> bool:
+    """Check if AI instructions feature is enabled.
+    
+    Returns:
+        True if AI instructions should be included
+    """
     return get_config_data().get("use_ai_instructions", BASE_CONFIG["use_ai_instructions"])
 
-def get_ai_instructions_text():
+def get_ai_instructions_text() -> str:
+    """Get AI instructions text from configuration.
+    
+    Returns:
+        AI instructions text to include in prompts
+    """
     return get_config_data().get("ai_instructions_text", BASE_CONFIG["ai_instructions_text"])

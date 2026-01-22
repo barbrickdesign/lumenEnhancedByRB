@@ -1,15 +1,32 @@
+"""Main CLI module for Lumen.
+
+Command-line interface for the Lumen Protocol CLI tool.
+Provides commands for local prompt generation and network contributions.
+"""
 from lum.visualizer import *
 from lum.assembly import *
 from lum.config import *
 from lum.smart_read import *
 
-from typing import List
-import json, os, sys, platform, subprocess, argparse, pyperclip
+from typing import List, Dict, Any
+import json
+import os
+import sys
+import platform
+import subprocess
+import argparse
+import pyperclip
 from colorama import init, Fore, Style
 
 init(autoreset=True)
 
-def get_parameters():
+
+def get_parameters() -> Dict[str, Any]:
+    """Get base parameters from configuration.
+    
+    Returns:
+        Dictionary containing intro text, title text, and skipped folders
+    """
     base_parameters = {
         "intro_text": get_intro(),
         "title_text": get_title(),
@@ -17,15 +34,38 @@ def get_parameters():
     }
     return base_parameters
 
-def change_parameters():
-    if platform.system() == "Windows":
-        os.startfile(get_config_file())
-    elif platform.system() == "Darwin":
-        subprocess.Popen(["open", get_config_file()])
-    else:
-        subprocess.Popen(["xdg-open", get_config_file()])
+def change_parameters() -> None:
+    """Open configuration file in system's default editor.
+    
+    Platform-specific handling for Windows, macOS, and Linux.
+    """
+    config_file = get_config_file()
+    
+    if not os.path.exists(config_file):
+        print(f"{Fore.YELLOW}Configuration file not found. Creating...")
+        check_config()
+    
+    try:
+        if platform.system() == "Windows":
+            os.startfile(config_file)
+        elif platform.system() == "Darwin":
+            subprocess.Popen(["open", config_file])
+        else:
+            subprocess.Popen(["xdg-open", config_file])
+    except Exception as e:
+        print(f"{Fore.RED}Error opening configuration file: {e}")
+        print(f"Please manually edit: {config_file}")
 
-def make_structure(path: str, skipped: List):
+def make_structure(path: str, skipped: List[str]) -> str:
+    """Generate JSON representation of project structure.
+    
+    Args:
+        path: Root path to analyze
+        skipped: List of folders to skip
+        
+    Returns:
+        JSON string of project structure
+    """
     data = json.dumps(
         get_project_structure(
             root_path = path,
@@ -35,9 +75,26 @@ def make_structure(path: str, skipped: List):
     )
     return data
 
-def lum_command_local(args):
+def lum_command_local(args) -> None:
+    """Execute local prompt generation command.
+    
+    Analyzes local directory, generates prompt, and either copies to clipboard
+    or saves to file. Supports token counting and leaderboard display.
+    
+    Args:
+        args: Command-line arguments
+    """
     print("Launching local analysis...")
     root_path = args.path
+    
+    # Validate path exists
+    if not os.path.exists(root_path):
+        print(f"{Fore.RED}Error: Path '{root_path}' does not exist.")
+        sys.exit(1)
+    
+    if not os.path.isdir(root_path):
+        print(f"{Fore.RED}Error: Path '{root_path}' is not a directory.")
+        sys.exit(1)
 
     if args.txt: output_file = args.txt
     else: output_file = None
@@ -60,6 +117,15 @@ def lum_command_local(args):
 
     files_root, file_count, folder_count = get_files_root(root_path, skipped_folders)
     title_text = base_parameters["title_text"]
+    
+    # Check if any files were found
+    if file_count == 0:
+        print(f"{Fore.YELLOW}Warning: No processable files found in '{root_path}'.")
+        print("This may be because:")
+        print("  - All files are in skipped folders (node_modules, .git, etc.)")
+        print("  - No files match allowed file types")
+        print("  - Directory is empty")
+        sys.exit(0)
 
     if args.leaderboard is not None:
         rank_tokens(files_root, args.leaderboard, allowed_files = allowed_files, skipped_files = skipped_files)
@@ -104,7 +170,7 @@ def lum_command_local(args):
             print(Fore.YELLOW + "Copy to clipboard failed.")
             print(Style.DIM + "To fix clipboard issues on Linux, install xsel or xclip.")
             
-            choice = input("Do you want to create a 'prompt.txt' file as fallback? [Y/N]: ").strip().lower()
+            choice = input("Do you want to create a 'prompt.txt' file as fallback? [Y/n]: ").strip().lower()
             
             if choice == '' or choice == 'y':
                 output_path = os.path.join(os.getcwd(), "prompt.txt")
@@ -116,6 +182,7 @@ def lum_command_local(args):
                     print(Fore.RED + f"Error saving prompt to file {output_path}: {e}")
             else:
                 print(Fore.YELLOW + "Prompt.txt creation cancelled.")
+                print("The prompt could not be saved. Please fix clipboard issues or try -t flag.")
 
     elif output_file is not None:
         output_path = os.path.join(root_path, f"{output_file}.txt")
@@ -126,7 +193,14 @@ def lum_command_local(args):
         except Exception as e:
             print(Fore.RED + f"Error saving prompt to file {output_path}: {e}")
 
-def lum_github(args):
+def lum_github(args) -> None:
+    """Analyze a GitHub repository.
+    
+    Clones the repository temporarily, analyzes it, then removes the clone.
+    
+    Args:
+        args: Command-line arguments including github URL
+    """
     from lum.github import check_git, check_repo, download_repo, remove_repo 
 
     git_exists = check_git()
@@ -147,7 +221,14 @@ def lum_github(args):
         git_root_to_remove = os.path.join(get_config_directory(), github_link.split("/")[-1].replace(".git", ""))
         remove_repo(git_root_to_remove)
 
-def lum_login(args):
+def lum_login(args) -> None:
+    """Execute login command to authorize device.
+    
+    Initiates device authorization flow with user consent.
+    
+    Args:
+        args: Command-line arguments
+    """
     import lum.api as api
 
     if get_pat():
@@ -165,7 +246,7 @@ def lum_login(args):
     
     consent = input("Do you understand and agree? (Y/N): ").strip().upper()
     if consent != "Y":
-        print("Login cancelled.")
+        print("Login cancelled. You must agree to the terms to use the network features.")
         return
 
     pat = api.perform_login()
@@ -175,7 +256,12 @@ def lum_login(args):
     else:
         print(Fore.RED + "\n❌ Error: Authorization failed or timed out.")
 
-def lum_logout(args):
+def lum_logout(args) -> None:
+    """Execute logout command to de-authorize device.
+    
+    Args:
+        args: Command-line arguments
+    """
     if not get_pat():
         print(Fore.YELLOW + "You are not logged in.")
         return
@@ -184,7 +270,14 @@ def lum_logout(args):
     print(Fore.GREEN + "You have been successfully logged out.")
     print("Thank you for your contributions to the Lumen network!")
 
-def lum_contribute(args):
+def lum_contribute(args) -> None:
+    """Execute contribute command to submit code to network.
+    
+    Assembles, sanitizes, and submits the current project to Lumen Protocol.
+    
+    Args:
+        args: Command-line arguments
+    """
     import lum.api as api
 
     pat = get_pat()
@@ -205,13 +298,19 @@ def lum_contribute(args):
     
     print(" 1. Assembling file structure...")
     files_root, file_count, folder_count = get_files_root(root_path, skipped_folders)
-    print(f"    Found {file_count} files across {folder_count} folders.")
-    if not files_root:
+    print(f"    Found {Fore.CYAN}{file_count}{Style.RESET_ALL} files across {Fore.CYAN}{folder_count}{Style.RESET_ALL} folders.")
+    
+    if not files_root or file_count == 0:
         print(Fore.YELLOW + "No allowed files found in this directory. Nothing to contribute.")
+        print("This may be because all files are in skipped folders or don't match allowed types.")
         return
     
     print(" 2. Sanitizing code and preparing payload...")
-    codebase = assemble_for_api(files_root, allowed_files, skipped_files)
+    try:
+        codebase = assemble_for_api(files_root, allowed_files, skipped_files)
+    except Exception as e:
+        print(f"{Fore.RED}Error during code assembly: {e}")
+        return
     
     try:
         import tiktoken
@@ -231,7 +330,14 @@ def lum_contribute(args):
     else:
         print(Fore.RED + "\n❌ Contribution failed. Please check the error message above.")
 
-def lum_history(args):
+def lum_history(args) -> None:
+    """Execute history command to view contribution history.
+    
+    Displays the last 10 contributions with status and rewards.
+    
+    Args:
+        args: Command-line arguments
+    """
     import lum.api as api
 
     pat = get_pat()
@@ -268,7 +374,8 @@ def lum_history(args):
         ))
     print("-" * 75)
 
-def print_custom_help():
+def print_custom_help() -> None:
+    """Display custom help message with command overview."""
     print(Fore.CYAN + Style.BRIGHT + "Lumen CLI" + Style.RESET_ALL + " - Your gateway to the Lumen Protocol and local AI context generation.")
     print(Style.DIM + "Usage: lum <command> [options]\n")
 
@@ -292,7 +399,11 @@ def print_custom_help():
 
     print("\n" + Style.DIM + "Use 'lum <command> --help' for more details on any command.")
 
-def main():
+def main() -> None:
+    """Main entry point for the Lumen CLI.
+    
+    Parses command-line arguments and dispatches to appropriate command handler.
+    """
     parser = argparse.ArgumentParser(
         description="Lumen CLI: Contribute code to the Lumen network or generate local prompts.",
         formatter_class=argparse.RawTextHelpFormatter

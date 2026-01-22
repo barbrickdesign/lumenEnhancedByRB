@@ -1,15 +1,34 @@
+"""API interaction module for Lumen Protocol.
+
+Handles authentication, contribution submission, and history retrieval
+through the Lumen Protocol backend API.
+"""
 import requests
 import time
 import json
 import hmac
 import hashlib
 import asyncio
+from typing import Optional, Dict, Any, List
 import websockets
 
 BASE_URL = "https://lumen.onl/api/v1"
-#BASE_URL = "http://localhost:8000/api/v1"
+# BASE_URL = "http://localhost:8000/api/v1"
 
-async def listen_for_token(device_code: str, expires_in: int):
+
+async def listen_for_token(device_code: str, expires_in: int) -> Optional[str]:
+    """Listen for authentication token via WebSocket.
+    
+    Connects to WebSocket endpoint and waits for user to authorize
+    the device through the web interface.
+    
+    Args:
+        device_code: Unique device code for this authorization request
+        expires_in: Timeout in seconds
+        
+    Returns:
+        Authentication token if successful, None otherwise
+    """
     if BASE_URL.startswith("https://"):
         ws_scheme = "wss"
         ws_host_port = BASE_URL[len("https://"):]
@@ -36,7 +55,15 @@ async def listen_for_token(device_code: str, expires_in: int):
     except Exception:
         return None
 
-def perform_login():
+def perform_login() -> Optional[str]:
+    """Initiate device authorization flow.
+    
+    Requests a device code from the API and opens a WebSocket connection
+    to wait for user authorization through the web interface.
+    
+    Returns:
+        Personal access token if successful, None otherwise
+    """
     try:
         response = requests.post(f"{BASE_URL}/cli/device-auth", timeout=10)
         response.raise_for_status()
@@ -61,7 +88,19 @@ def perform_login():
                 print(f"   Response: {e.response.text}")
         return None
 
-def submit_contribution(pat: str, codebase: str):
+def submit_contribution(pat: str, codebase: str) -> Optional[Dict[str, Any]]:
+    """Submit a code contribution to the Lumen Protocol.
+    
+    Uses HMAC-based request signing for security. Performs handshake
+    to get challenge, then signs the contribution payload.
+    
+    Args:
+        pat: Personal access token
+        codebase: Sanitized code content to submit
+        
+    Returns:
+        Response dictionary with contribution_id if successful, None otherwise
+    """
     if not pat:
         print("Error: You must be logged in to contribute.")
         return False
@@ -97,10 +136,21 @@ def submit_contribution(pat: str, codebase: str):
     except requests.RequestException as e:
         print(f"Error during contribution: {e}")
         if e.response:
-            print(f"   Response: {e.response.json()}")
+            try:
+                print(f"   Response: {e.response.json()}")
+            except (json.JSONDecodeError, ValueError):
+                print(f"   Response: {e.response.text}")
         return None
 
-def get_history(pat: str):
+def get_history(pat: str) -> Optional[List[Dict[str, Any]]]:
+    """Retrieve contribution history for the authenticated user.
+    
+    Args:
+        pat: Personal access token
+        
+    Returns:
+        List of contribution records if successful, None otherwise
+    """
     if not pat:
         print("Error: You must be logged in to view history.")
         return None
@@ -113,5 +163,8 @@ def get_history(pat: str):
     except requests.RequestException as e:
         print(f"Error fetching history: {e}")
         if e.response:
-            print(f"   Response: {e.response.json()}")
+            try:
+                print(f"   Response: {e.response.json()}")
+            except (json.JSONDecodeError, ValueError):
+                print(f"   Response: {e.response.text}")
         return None

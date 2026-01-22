@@ -1,12 +1,33 @@
+"""Assembly module for building prompts from codebase files.
+
+Handles collection of files, reading their contents, and assembling them
+into a formatted prompt suitable for LLMs.
+"""
 from lum.smart_read import read_file
 from lum.gitignore import *
-from typing import List
+from typing import List, Dict, Tuple
 import os
 
 
 PROMPT_SEPERATOR = "\n\n\n"
 
-def get_files_root(main_root: str, skipped_folders: List, allowed: List = None):
+
+def get_files_root(main_root: str, skipped_folders: List[str], allowed: List[str] = None) -> Tuple[Dict[str, str], int, int]:
+    """Recursively collect all processable files from a directory tree.
+    
+    Respects .gitignore rules and skips hidden folders (starting with '.').
+    
+    Args:
+        main_root: Root directory to scan
+        skipped_folders: List of folder names/patterns to skip
+        allowed: List of allowed file extensions
+        
+    Returns:
+        Tuple of (files_dict, file_count, folder_count) where:
+        - files_dict maps relative paths to absolute paths
+        - file_count is the total number of files found
+        - folder_count is the number of folders analyzed
+    """
     if allowed is None:
         from lum.smart_read import get_files_parameters
         allowed = get_files_parameters()["allowed_files"]
@@ -17,33 +38,40 @@ def get_files_root(main_root: str, skipped_folders: List, allowed: List = None):
     files_list = {}
     analyzed_folder_count = 0
     min_level = 0
-    for root, _, files in os.walk(main_root):
+    
+    for root, dirs, files in os.walk(main_root):
         should_skip = False
         
         relative_dir = os.path.relpath(root, main_root)
         
+        # Skip hidden directories (starting with '.')
         if any(part.startswith('.') for part in relative_dir.split(os.sep) if part != '.'):
             should_skip = True
         else:
+            # Check against skipped folder patterns
             for folder_pattern in skipped_folders:
+                # Pattern with wildcard (e.g., "*cache")
                 if folder_pattern.startswith("*"):
-                    if root.endswith(folder_pattern[1::]):
+                    if root.endswith(folder_pattern[1:]):
                         should_skip = True
                         break
-
+                
+                # Pattern with path separators (e.g., "src/temp")
                 elif '/' in folder_pattern or '\\' in folder_pattern:
                     normalized_pattern = os.path.normpath(folder_pattern)
                     if relative_dir == normalized_pattern or relative_dir.startswith(normalized_pattern + os.sep):
                         should_skip = True
                         break
-
+                
+                # Simple folder name match
                 else:
                     if os.path.basename(root) == folder_pattern:
                         should_skip = True
                         break
 
         if should_skip:
-            _[:] = []
+            # Clear dirs list to prevent os.walk from descending
+            dirs[:] = []
             continue
 
         analyzed_folder_count += 1
@@ -52,34 +80,83 @@ def get_files_root(main_root: str, skipped_folders: List, allowed: List = None):
 
         if files:
             for file in files:
+                # Skip hidden files
                 if file.startswith('.'):
                     continue
+                # Check if file extension is allowed
                 if any(file.endswith(allowed_file) for allowed_file in allowed):
                     file_root = f"{root}{os.sep}{file}"
-                    file_list_index = "/".join(file_root.split(os.sep)[min_level::])
+                    file_list_index = "/".join(file_root.split(os.sep)[min_level:])
                     files_list[file_list_index] = file_root
 
     return files_list, len(files_list), analyzed_folder_count
 
-def add_intro(prompt: str, intro: str):
+def add_intro(prompt: str, intro: str) -> str:
+    """Add introductory text to the prompt.
+    
+    Args:
+        prompt: Existing prompt string
+        intro: Intro text to add
+        
+    Returns:
+        Updated prompt with intro text
+    """
     prompt += intro + PROMPT_SEPERATOR
     return prompt
 
 
-def add_structure(prompt: str, json_structure: str):
+def add_structure(prompt: str, json_structure: str) -> str:
+    """Add project structure section to the prompt.
+    
+    Args:
+        prompt: Existing prompt string
+        json_structure: JSON representation of project structure
+        
+    Returns:
+        Updated prompt with structure section
+    """
     prompt += "--- PROJECT STRUCTURE ---" + PROMPT_SEPERATOR
     prompt += json_structure + PROMPT_SEPERATOR
     return prompt
 
 
-def add_files_content(prompt: str, files_root: dict, title_text: str = None, allowed_files: List = None, skipped_files: List = None):
+def add_files_content(prompt: str, files_root: Dict[str, str], title_text: str = None, 
+                      allowed_files: List[str] = None, skipped_files: List[str] = None) -> str:
+    """Add file contents to the prompt.
+    
+    Iterates through all files and appends their content with title headers.
+    
+    Args:
+        prompt: Existing prompt string
+        files_root: Dictionary mapping file names to file paths
+        title_text: Format string for file titles
+        allowed_files: List of allowed file extensions
+        skipped_files: List of files to skip
+        
+    Returns:
+        Updated prompt with all file contents
+    """
     for file_name, file_path in files_root.items():
         prompt += title_text.format(file = file_name) + PROMPT_SEPERATOR
         prompt += read_file(file_path, allowed_files = allowed_files, skipped_files = skipped_files) + PROMPT_SEPERATOR
 
     return prompt
 
-def assemble_for_api(files_root: dict, allowed_files: List = None, skipped_files: List = None):
+def assemble_for_api(files_root: Dict[str, str], allowed_files: List[str] = None, 
+                     skipped_files: List[str] = None) -> str:
+    """Assemble and sanitize code for API submission.
+    
+    Reads all files, combines them with separators, and applies sanitization
+    to remove comments, secrets, and PII before network submission.
+    
+    Args:
+        files_root: Dictionary mapping file names to file paths
+        allowed_files: List of allowed file extensions
+        skipped_files: List of files to skip
+        
+    Returns:
+        Sanitized code blob ready for API submission
+    """
     from lum.data import sanitize_code
 
     full_code_blob = ""
